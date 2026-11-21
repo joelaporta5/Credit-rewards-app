@@ -105,7 +105,8 @@ def oauth_return(request: Request):
 
 @router.post("/refresh")
 def refresh_now(request: Request, db: Session = Depends(get_db)):
-    items = db.scalars(select(PlaidItem).where(PlaidItem.status.not_in(["removed", "revoked"]))).all()
+    items = db.scalars(select(PlaidItem).where(PlaidItem.status.not_in(["removed", "revoked"]),
+                                               PlaidItem.plaid_env == get_settings().plaid_env)).all()
     notes = []
     gw = get_gateway()
     for item in items:

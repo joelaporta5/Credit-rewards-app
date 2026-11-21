@@ -542,7 +542,9 @@ def refresh_item(item_id: int, gw: Gateway | None = None) -> tuple[SyncResult, s
 
 def sync_all(trigger: str = "schedule", gw: Gateway | None = None) -> list[SyncResult]:
     with SessionLocal() as s:
-        ids = [i for i in s.scalars(select(PlaidItem.id).where(PlaidItem.status.not_in(["removed", "revoked"])))]
+        # Only connections made in the current Plaid environment (Sandbox items can't be synced with Production keys).
+        ids = [i for i in s.scalars(select(PlaidItem.id).where(PlaidItem.status.not_in(["removed", "revoked"]),
+                                                              PlaidItem.plaid_env == get_settings().plaid_env))]
     return [sync_item(i, trigger, gw=gw) for i in ids]
 
 

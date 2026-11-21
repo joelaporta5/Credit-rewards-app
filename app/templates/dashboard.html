@@ -64,17 +64,17 @@
   </div>
   {% if d.pending_transfers %}
   <h3>Transfers in progress</h3>
-  <table>
-    {% for t in d.pending_transfers %}
-    <tr><td>{{ t.amount_cents | money }} <span class="muted small">marked {{ t.created_at | age }}</span><br>
-      {% if t.status == "pending" %}<span class="pill warn">waiting for Plaid to show it leaving checking</span>
-      {% else %}<span class="pill good">left checking</span> <span class="small muted">waiting for it to post on both accounts</span>{% endif %}</td>
-      <td class="num">
-        <form class="inline" method="post" action="/transfers/{{ t.id }}/confirm"><button class="secondary" type="submit" title="Use only if Plaid never shows it">Confirm manually</button></form>
-        <form class="inline" method="post" action="/transfers/{{ t.id }}/cancel"><button class="danger" type="submit">Cancel</button></form>
-      </td></tr>
-    {% endfor %}
-  </table>
+  {% for t in d.pending_transfers %}
+  <div style="border-top:1px solid var(--line);padding:8px 0">
+    <div><b>{{ t.amount_cents | money }}</b> <span class="muted small">marked {{ t.created_at | age }}</span></div>
+    <div class="small" style="margin:4px 0">{% if t.status == "pending" %}<span class="pill warn">waiting for Plaid to show it leaving checking</span>
+      {% else %}<span class="pill good">left checking</span> waiting for it to post on both accounts{% endif %}</div>
+    <div class="row">
+      <form class="inline" method="post" action="/transfers/{{ t.id }}/confirm"><button class="secondary" type="submit" title="Use only if Plaid never shows it">Confirm manually</button></form>
+      <form class="inline" method="post" action="/transfers/{{ t.id }}/cancel"><button class="danger" type="submit">Cancel</button></form>
+    </div>
+  </div>
+  {% endfor %}
   {% endif %}
 </section>
 
