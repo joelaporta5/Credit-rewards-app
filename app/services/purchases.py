@@ -38,6 +38,11 @@ def ensure_purchase_for_txn(session: Session, txn: PlaidTransaction, why: str) -
             existing.state = "excluded"
             existing.state_reason = "Plaid now classifies this as a card payment, which doesn't add card spend"
         existing.updated_at = now()
+        ev = existing.wallet_event
+        if ev is not None and existing.plaid_transaction_id == txn.id and ev.amount_cents is not None:
+            existing.amount_difference_cents = txn.amount_cents - ev.amount_cents
+            if existing.amount_difference_cents:
+                why = f"{why}; Plaid amount differs from tap by {fmt(existing.amount_difference_cents, signed=True)}"
         ledger.sync_purchase(session, existing, why)
         return existing
     if card is None or txn.is_removed or cls == "payment":

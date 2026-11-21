@@ -105,11 +105,16 @@ def _time_score(ev: WalletEvent, txn: PlaidTransaction) -> tuple[float, int] | N
     score = {0: 1.0, 1: 0.9, 2: 0.75, 3: 0.6}[off]
     if txn.authorized_datetime is not None:
         delta = abs((txn.authorized_datetime - ev.event_at).total_seconds())
+        # Both sides have a clock time: use it to tell apart same-day purchases.
         if delta <= 15 * 60:
             score = 1.0
         elif delta <= 2 * 3600:
-            score = max(score, 0.97)
-        elif delta > 36 * 3600:
+            score = max(min(score, 0.97), 0.9)
+        elif delta <= 12 * 3600:
+            score = min(score, 0.85)
+        elif delta <= 36 * 3600:
+            score = min(score, 0.75)
+        else:
             score = min(score, 0.6)
     return score, off
 

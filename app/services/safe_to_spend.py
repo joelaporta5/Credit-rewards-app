@@ -161,7 +161,7 @@ def compute(session: Session) -> Dashboard:
     elif snap is None:
         warnings.append("No checking balance has been fetched yet.")
     if snap is not None and ref_now - snap.as_of > timedelta(hours=stale_hours):
-        holdback_reasons.append(f"Checking balance is {humanize_age(snap.as_of)} old (limit {stale_hours}h)")
+        holdback_reasons.append(f"Checking balance is from {humanize_age(snap.as_of)} (older than {stale_hours} hours)")
     reserve_snap = latest_snapshot(session, reserve.id) if reserve else None
     reserve_cash = None
     if reserve_snap is not None:
