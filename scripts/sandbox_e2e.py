@@ -113,13 +113,23 @@ def main() -> int:
         enc = item.access_token_encrypted
     check("Sandbox Item created and token stored encrypted", "access-sandbox" not in enc, f"products: {products}")
 
+    # The dynamic test user has a single bank account, so the reserve account comes from a
+    # second Sandbox bank login (its checking account plays the reserve).
+    pt2 = gw.sandbox_public_token_create("ins_109508", ["transactions"], webhook=s.webhook_url,
+                                         override_username="user_transactions_dynamic")
+    with SessionLocal() as db:
+        item2 = plaid_sync.connect_item(db, gw, pt2["public_token"], "ins_109508", "First Platypus Bank (reserve)")
+        db.commit()
+        item2_id = item2.id
+
     # 2. Roles ----------------------------------------------------------------------
     with SessionLocal() as db:
         accts = db.scalars(select(Account).order_by(Account.id)).all()
-        print("  accounts:", ", ".join(f"{a.name} ({a.type}/{a.subtype})" for a in accts))
-        dep = [a for a in accts if a.type == "depository"]
+        print("  accounts:", ", ".join(f"{a.name} ({a.type}/{a.subtype}, item {a.item_id})" for a in accts))
+        dep = [a for a in accts if a.type == "depository" and a.item_id == item_id]
         checking = next((a for a in dep if a.subtype == "checking"), dep[0] if dep else None)
-        reserve = next((a for a in dep if a is not checking), None)
+        dep2 = [a for a in accts if a.type == "depository" and a.item_id == item2_id]
+        reserve = next((a for a in dep2 if a.subtype == "checking"), dep2[0] if dep2 else None)
         if checking:
             checking.role = "primary_checking"
         if reserve:
@@ -180,7 +190,14 @@ def main() -> int:
         n_blue = db.scalar(select(func.count()).select_from(PlaidTransaction).where(PlaidTransaction.name.ilike("%BLUE BOTTLE%")))
     check("Apple Pay event matched to the Sandbox transaction", p.plaid_transaction_id is not None,
           f"confidence {p.match_confidence}, after {n} sync(s); Plaid rows for it: {n_blue}")
-    check("Matched purchase counted once", after - before == 0, f"card spend before match {fmt(before)}, after {fmt(after)}")
+    with SessionLocal() as db:
+        n_purchases = db.scalar(select(func.count()).select_from(Purchase).join(
+            PlaidTransaction, PlaidTransaction.id == Purchase.plaid_transaction_id).where(
+            PlaidTransaction.name.ilike("%BLUE BOTTLE%"), Purchase.state == "active"))
+        counted = ledger.purchase_sum(db, p.id)
+    check("Matched purchase counted once", n_purchases == 1 and counted == 1234 and n_blue == 1,
+          f"1 Plaid row, {n_purchases} active purchase, ledger total for it {fmt(counted)} "
+          f"(overall card spend moved {fmt(before)} -> {fmt(after)} because Sandbox also added unrelated charges)")
 
     # 5. Duplicate delivery --------------------------------------------------------
     with SessionLocal() as db:
@@ -201,23 +218,35 @@ def main() -> int:
         gw.sandbox_transactions_create(plaid_sync._item_token(_item(item_id)), [
             {"date_transacted": today(), "date_posted": today(), "amount": 300.00, "description": "ONLINE TRANSFER TO RESERVE",
              "account_id": checking_plaid_id},
-            {"date_transacted": today(), "date_posted": today(), "amount": -300.00, "description": "ONLINE TRANSFER FROM CHECKING",
-             "account_id": reserve_plaid_id},
         ])
         try:
-            gw.transactions_refresh(plaid_sync._item_token(_item(item_id)))
-        except PlaidError:
-            pass
-        sync_until(item_id, gw, lambda db: db.get(ReserveTransfer, tr_id).status != "pending", "transfer", tries=18)
+            gw.sandbox_transactions_create(plaid_sync._item_token(_item(item2_id)), [
+                {"date_transacted": today(), "date_posted": today(), "amount": -300.00, "description": "ONLINE TRANSFER FROM CHECKING",
+                 "account_id": reserve_plaid_id},
+            ])
+        except PlaidError as e:
+            print(f"  (custom transactions not supported for the reserve test user: {e.error_code}; reserve side skipped)")
+        for iid in (item_id, item2_id):
+            try:
+                gw.transactions_refresh(plaid_sync._item_token(_item(iid)))
+            except PlaidError:
+                pass
+
+        def moved(db):
+            plaid_sync.sync_item(item2_id, "e2e", force_balance=True, gw=gw)
+            return db.get(ReserveTransfer, tr_id).status == "confirmed"
+
+        sync_until(item_id, gw, moved, "transfer", tries=18)
         with SessionLocal() as db:
             tr = db.get(ReserveTransfer, tr_id)
             d2 = compute(db)
             entries = db.scalars(select(LedgerEntry).where(LedgerEntry.reserve_transfer_id == tr_id)).all()
         check("Marked transfer doesn't change safe-to-spend while pending", d1.safe_to_spend == d0.safe_to_spend,
               f"{fmt(d0.safe_to_spend)} -> {fmt(d1.safe_to_spend)}")
-        check("Transfer detected on both accounts and recorded once", tr.status in ("left_checking", "confirmed") and len(entries) == 1,
-              f"status {tr.status}, ledger entries {[e.amount_cents for e in entries]}. Note: Sandbox balances don't move with "
-              f"custom transactions, so verified cash here is static ({fmt(d2.verified_cash)}).")
+        check("Transfer seen leaving checking, recorded once in the ledger", tr.status in ("left_checking", "confirmed") and len(entries) == 1,
+              f"status {tr.status}, ledger entries {[e.amount_cents for e in entries]}")
+
+        check("Transfer confirmed on both accounts", tr.status == "confirmed", f"status {tr.status}")
 
     # 7. Refresh now ---------------------------------------------------------------------
     r, note = plaid_sync.refresh_item(item_id, gw=gw)

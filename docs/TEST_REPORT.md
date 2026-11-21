@@ -2,7 +2,7 @@
 
 Run on 2026-11-21 in the development container: Python 3.12.3, PostgreSQL 16.15, schema created by the Alembic migrations, fake Plaid data (no network).
 
-**Result: 70 passed in 7.47s.**
+**Result: 70 passed in 7.47s.** (A retry test added afterwards brings the suite to 71; latest run: 71 passed.)
 
 Command: `pytest -v`
 
@@ -104,4 +104,58 @@ tests/test_units.py::test_add_months_clamps PASSED
 
 ## Sandbox end-to-end (`scripts/sandbox_e2e.py`)
 
-**Not run yet.** It needs your Plaid client_id, which hadn't been provided when this report was written. Results will be added here from a real run; none are claimed.
+Run on 2026-11-21 against the real Plaid **Sandbox** API (plaid-python 47.0.0), First Platypus
+Bank (`ins_109508`), test user `user_transactions_dynamic`, two Sandbox logins (the second one's
+checking account plays the reserve).
+
+**Result: 14/14 checks passed** (third run). Output of that run, unedited except for the long account list:
+
+```
+Database: postgresql://postgres@localhost:5432/rewards_e2e
+Plaid: sandbox
+
+[PASS] Sandbox Item created and token stored encrypted — products: transactions+liabilities
+[PASS] Checking, reserve and credit card accounts found — checking=True reserve=True card=True
+[PASS] /transactions/sync returned transactions and saved a cursor — 311 transactions after 1 sync(s), status INITIAL_UPDATE_COMPLETE, last messages []
+[PASS] /accounts/balance/get stored a checking balance — available $420.23
+[PASS] /liabilities/get stored card statement data — 1 snapshot(s)
+[PASS] Apple Pay event matched to the Sandbox transaction — confidence high, after 1 sync(s); Plaid rows for it: 1
+[PASS] Matched purchase counted once — 1 Plaid row, 1 active purchase, ledger total for it $12.34 (overall card spend moved $68.90 -> $143.97 because Sandbox also added unrelated charges)
+[PASS] Duplicate Shortcut delivery counted once
+[PASS] Marked transfer doesn't change safe-to-spend while pending — -$493.97 -> -$493.97
+[PASS] Transfer seen leaving checking, recorded once in the ledger — status confirmed, ledger entries [-30000]
+[PASS] Transfer confirmed on both accounts — status confirmed
+[PASS] 'Refresh now' ran — Asked Plaid to check the bank now (/transactions/refresh). New transactions arrive by webhook within minutes.
+[PASS] Ledger integrity: dashboard total == sum of entries; every purchase reconciles — sum $143.36; safe-to-spend $32.94
+
+  Dashboard: verified cash $276.30 − card spend $143.36 − bills $0.00 − buffer $100.00 − holdback $0.00 = $32.94
+
+sync item 1 failed at transactions_sync: transactions_sync: ITEM_LOGIN_REQUIRED
+[PASS] ITEM_LOGIN_REQUIRED flags the connection for re-authentication — status needs_reauth (ITEM_LOGIN_REQUIRED)
+
+14/14 checks passed
+```
+
+The "sync item 1 failed ... ITEM_LOGIN_REQUIRED" line is expected: the last step forces that
+error on purpose (`/sandbox/item/reset_login`).
+
+**Earlier runs (kept for honesty):**
+- Run 1: the Plaid Python client ignored the container's HTTPS proxy, so nothing connected.
+  Fixed: the gateway now honors the `HTTPS_PROXY` and CA-bundle environment variables.
+- Run 2: 9/11. (a) The dynamic test user has only one bank account, so there was no reserve
+  account; fixed in the script with a second Sandbox login. (b) Plaid returned
+  `INTERNAL_SERVER_ERROR` on the sync right after a refresh; the app recorded it correctly, and
+  it now **retries temporary Plaid errors** (5xx, API_ERROR, rate limits) up to 3 times with backoff
+  (unit-tested).
+- Run 3: 13/14. The "counted once" check compared total card spend before and after, but Sandbox
+  added unrelated charges in between. The app was right: one purchase, one Plaid row, $12.34 in
+  the ledger. The check now looks at that purchase directly. In that run `/transactions/refresh`
+  also hit Sandbox's `TRANSACTIONS_LIMIT`, and the app fell back to a normal sync as designed.
+
+Sandbox note: the dynamic test user's *available* checking balance changes on its own between
+calls (e.g. $420.23 → $69.10 → $0.00 → $293.43 while *current* stayed $500.00). That's Plaid's
+simulation, which is why the dashboard numbers above move.
+
+**Not covered by this run:** delivery of Plaid webhooks (this development container has no public
+address). After deploying, use **Connect → Send a test webhook (Sandbox)** and check that **Activity**
+lists it as verified.

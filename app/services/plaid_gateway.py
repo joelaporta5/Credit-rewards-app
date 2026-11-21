@@ -48,6 +48,31 @@ REAUTH_ERROR_CODES = {
 }
 
 
+TRANSIENT_ERROR_CODES = {"INTERNAL_SERVER_ERROR", "PLANNED_MAINTENANCE", "RATE_LIMIT_EXCEEDED"}
+
+
+def is_transient(err: PlaidError) -> bool:
+    return (err.status or 0) >= 500 or err.error_type in ("API_ERROR", "RATE_LIMIT_EXCEEDED") or err.error_code in TRANSIENT_ERROR_CODES
+
+
+def _to_plaid_error(exc: Exception) -> PlaidError | None:
+    from plaid.exceptions import ApiException
+
+    if not isinstance(exc, ApiException):
+        return None
+    try:
+        body = json.loads(exc.body or "{}")
+    except (TypeError, ValueError):
+        body = {}
+    return PlaidError(
+        body.get("error_code", "UNKNOWN"),
+        body.get("error_type", ""),
+        body.get("error_message", str(exc.reason)),
+        body.get("display_message"),
+        exc.status,
+    )
+
+
 class Gateway(Protocol):
     def link_token_create(self, *, webhook: str, redirect_uri: str | None, access_token: str | None = None,
                           account_selection: bool = False) -> dict: ...
@@ -91,28 +116,39 @@ class PlaidGateway:
             host=host,
             api_key={"clientId": s.plaid_client_id, "secret": s.plaid_secret, "plaidVersion": "2020-09-14"},
         )
+        # plaid-python's HTTP layer (urllib3) ignores the standard proxy/CA environment variables.
+        # Honor them explicitly so the app works behind a corporate or hosting proxy.
+        import os
+
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        if proxy:
+            cfg.proxy = proxy
+        ca = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
+        if ca:
+            cfg.ssl_ca_cert = ca
         self._client = plaid_api.PlaidApi(plaid.ApiClient(cfg))
         self.env = s.plaid_env
 
     # -- helpers ----------------------------------------------------------
-    def _call(self, fn, request) -> dict:
-        from plaid.exceptions import ApiException
+    RETRY_DELAYS = (1.0, 3.0, 8.0)
 
-        try:
-            resp = fn(request)
-        except ApiException as exc:
+    def _call(self, fn, request) -> dict:
+        """Call Plaid; retry temporary failures (5xx / API_ERROR / rate limits). Every call
+        this app makes is read-only, so retrying is always safe."""
+        import time
+
+        for attempt in range(len(self.RETRY_DELAYS) + 1):
             try:
-                body = json.loads(exc.body or "{}")
-            except (TypeError, ValueError):
-                body = {}
-            raise PlaidError(
-                body.get("error_code", "UNKNOWN"),
-                body.get("error_type", ""),
-                body.get("error_message", str(exc.reason)),
-                body.get("display_message"),
-                exc.status,
-            ) from None  # don't chain: the original carries request details
-        return _jsonable(resp)
+                return _jsonable(fn(request))
+            except Exception as exc:  # noqa: BLE001
+                err = _to_plaid_error(exc)
+                if err is None:
+                    raise
+                if attempt < len(self.RETRY_DELAYS) and is_transient(err):
+                    time.sleep(self.RETRY_DELAYS[attempt])
+                    continue
+                raise err from None  # don't chain: the original carries request details
+        raise RuntimeError("unreachable")
 
     # -- Link ---------------------------------------------------------------
     def link_token_create(self, *, webhook: str, redirect_uri: str | None, access_token: str | None = None,

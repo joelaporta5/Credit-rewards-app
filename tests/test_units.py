@@ -106,3 +106,37 @@ def test_statement_close_estimate_and_manual_override():
 def test_add_months_clamps():
     assert timeutil.add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
     assert timeutil.add_months(date(2026, 12, 15), 1) == date(2027, 1, 15)
+
+
+def test_plaid_gateway_retries_transient_errors_only(monkeypatch):
+    import json as _json
+
+    from plaid.exceptions import ApiException
+
+    from app.services.plaid_gateway import PlaidError, PlaidGateway
+
+    monkeypatch.setattr(PlaidGateway, "RETRY_DELAYS", (0, 0, 0))
+    gw = PlaidGateway()
+
+    def failing(times, code, status, etype):
+        calls = {"n": 0}
+
+        def fn(_req):
+            calls["n"] += 1
+            if calls["n"] <= times:
+                e = ApiException(status=status, reason="x")
+                e.body = _json.dumps({"error_code": code, "error_type": etype, "error_message": "m"})
+                raise e
+            return {"ok": True}
+        return fn, calls
+
+    fn, calls = failing(2, "INTERNAL_SERVER_ERROR", 500, "API_ERROR")
+    assert gw._call(fn, None) == {"ok": True} and calls["n"] == 3
+    fn, calls = failing(9, "INTERNAL_SERVER_ERROR", 500, "API_ERROR")
+    with pytest.raises(PlaidError) as ei:
+        gw._call(fn, None)
+    assert ei.value.error_code == "INTERNAL_SERVER_ERROR" and calls["n"] == 4
+    fn, calls = failing(1, "ITEM_LOGIN_REQUIRED", 400, "ITEM_ERROR")
+    with pytest.raises(PlaidError):
+        gw._call(fn, None)
+    assert calls["n"] == 1  # not transient: no retry
