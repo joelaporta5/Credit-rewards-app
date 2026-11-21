@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Ledger: card spend not yet covered</h1>
+<div class="card">
+  <p>Sum of all {{ count }} entries: <b>{{ total | money }}</b>{% if total < 0 %} (negative = reserve over-funded; counted as $0){% endif %}.
+  Entries are never edited; every correction is a new entry.</p>
+  <details><summary>Add a manual entry</summary>
+    <form method="post" action="/ledger/adjust" class="row" style="margin-top:8px">
+      <select name="direction"><option value="add">Add card spend (e.g. opening balance)</option><option value="remove">Remove card spend</option></select>
+      <input name="amount" inputmode="decimal" placeholder="Amount" required style="width:8em">
+      <input name="reason" placeholder="Reason" required>
+      <button type="submit">Add entry</button>
+    </form></details>
+</div>
+<div class="card scroll">
+  <table class="small">
+    <tr><th>#</th><th>When</th><th>Type</th><th>Reason</th><th class="num">Amount</th><th class="num">Running</th></tr>
+    {% for e, run in rows %}
+    <tr><td>{{ e.id }}</td><td>{{ e.created_at | local }}</td><td>{{ e.entry_type | replace("_"," ") }}</td>
+      <td>{{ e.reason }}{% if e.purchase_id %} <span class="muted">(purchase #{{ e.purchase_id }})</span>{% endif %}{% if e.reserve_transfer_id %} <span class="muted">(transfer #{{ e.reserve_transfer_id }})</span>{% endif %}</td>
+      <td class="num">{{ e.amount_cents | smoney }}</td><td class="num">{{ run | money }}</td></tr>
+    {% else %}<tr><td colspan="6" class="muted">No entries yet.</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

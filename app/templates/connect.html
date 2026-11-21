@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Connect accounts</h1>
+<div class="card">
+  <p>Plaid environment: <span class="pill {% if plaid_env == 'production' %}warn{% endif %}">{{ plaid_env }}</span>
+  {% if plaid_env == "production" %} — real bank data. Production connections created: <b>{{ prod_count }}</b> of {{ trial_limit }} allowed on the Trial plan.
+  Deleting a connection does <b>not</b> give a slot back, so connect each bank once.{% else %} — test data only (use username <code>user_good</code>, password <code>pass_good</code>).{% endif %}</p>
+  {% if not configured %}<div class="banner bad">PLAID_CLIENT_ID / PLAID_SECRET are not set on the server.</div>{% endif %}
+  <p class="small muted">The app only ever reads data. It never sees your bank password (you type it into Plaid's window), and it can't move money.</p>
+  <button id="connect-btn" type="button" data-plaid-env="{{ plaid_env }}">Connect account</button>
+  <p id="link-status" class="small muted"></p>
+</div>
+
+<div class="card">
+  <h2>Your connections</h2>
+  <table>
+    {% for i in items %}
+    <tr id="item-{{ i.id }}"><td>{{ i.institution_name or "Connection" }} <span class="pill">{{ i.plaid_env }}</span>
+      <div class="small muted">{{ i.accounts | length }} account(s) · connected {{ i.created_at | local("%b %d, %Y") }}</div></td>
+      <td>{% if i.status == "active" %}<span class="pill good">ok</span>{% else %}<span class="pill bad">{{ i.status | replace("_"," ") }}</span>{% endif %}
+        {% if i.new_accounts_available %}<div class="small">New accounts available</div>{% endif %}</td>
+      <td class="num">{% if i.status != "active" or i.new_accounts_available %}
+        <button type="button" class="reconnect-btn" data-item-id="{{ i.id }}" data-account-selection="{{ 'true' if i.new_accounts_available else 'false' }}">Reconnect</button>
+        {% endif %}</td></tr>
+    {% else %}<tr><td class="muted">None yet.</td></tr>{% endfor %}
+  </table>
+  <p class="small muted">Reconnecting uses Plaid's “update mode” on the same connection: it does not create a new one or use another Trial slot.</p>
+  <form method="post" action="/admin/update-webhooks"><button class="secondary" type="submit">Point all connections' webhooks at this server</button></form>
+  <p class="small muted">Use this once after moving the app to a new address (e.g. from a tunnel to Render).</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="/static/link.js"></script>
+{% endblock %}

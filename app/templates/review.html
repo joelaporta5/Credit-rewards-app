@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review queue</h1>
+<p class="small"><a href="/review">Open items</a> · <a href="/review?show=all">Recent history</a></p>
+{% if not items %}<div class="card"><p class="muted">Nothing here. 🎉</p></div>{% endif %}
+{% for it in items %}
+<section class="card">
+  <div class="row"><span class="pill {% if it.kind in ('ambiguous_match','missing_after_5_days','unmapped_card') %}warn{% endif %}">{{ it.kind | replace("_", " ") }}</span>
+    <span class="muted small">{{ it.created_at | local }}</span>
+    {% if it.status != "open" %}<span class="pill">{{ it.resolution }}</span>{% endif %}</div>
+  <p>{{ it.summary }}</p>
+
+  {% if it.wallet_event %}{% set e = it.wallet_event %}
+  <p class="small muted">Apple Pay: {{ e.amount_cents | money }} at “{{ e.merchant_raw or "?" }}” on card “{{ e.card_name_raw or "?" }}”, {{ e.event_at | local }}
+    {% if e.parse_warnings %}<br>Notes: {{ e.parse_warnings | join("; ") }}{% endif %}</p>{% endif %}
+  {% if it.plaid_transaction %}{% set t = it.plaid_transaction %}
+  <p class="small muted">Plaid: {{ t.amount_cents | money }} “{{ t.display_name }}” {{ "pending" if t.pending else "posted" }} on {{ t.effective_date | day }} ({{ t.account.label }}){% if t.is_removed %} — removed by bank{% endif %}</p>{% endif %}
+  {% if it.details and it.details.explain %}<p class="small muted">Why: {{ it.details.explain }}</p>{% endif %}
+
+  {% if it.status == "open" %}
+  <div class="row">
+    {% if it.kind in ("medium_match", "low_confidence_match") %}
+      <form class="inline" method="post" action="/review/{{ it.id }}/confirm"><button type="submit">Same purchase</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/reject"><button class="secondary" type="submit">Different purchases</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/duplicate"><button class="danger" type="submit">Apple Pay event is a duplicate</button></form>
+    {% elif it.kind == "ambiguous_match" %}
+      <div style="width:100%">
+        <p class="small">Which tap is this charge?</p>
+        {% for c in it.details.candidates if c.plaid_transaction_id == it.plaid_transaction_id %}{% set ev = events.get(c.wallet_event_id) %}
+          {% if ev %}<form method="post" action="/review/{{ it.id }}/confirm" style="margin-bottom:6px">
+            <input type="hidden" name="wallet_event_id" value="{{ ev.id }}">
+            <button class="secondary" type="submit">{{ ev.amount_cents | money }} at {{ ev.merchant_raw }} — {{ ev.event_at | local }}</button>
+          </form>{% endif %}
+        {% endfor %}
+        <form class="inline" method="post" action="/review/{{ it.id }}/reject"><button class="danger" type="submit">None of these</button></form>
+      </div>
+    {% elif it.kind == "missing_after_5_days" %}
+      {% for c in candidates.get(it.id, []) %}
+        <form method="post" action="/review/{{ it.id }}/confirm" style="width:100%;margin-bottom:6px">
+          <input type="hidden" name="plaid_transaction_id" value="{{ c.txn.id }}">
+          <button class="secondary" type="submit">It's this one: {{ c.txn.amount_cents | money }} “{{ c.txn.display_name }}” {{ c.txn.effective_date | day }}</button>
+        </form>
+      {% endfor %}
+      <form class="inline" method="post" action="/review/{{ it.id }}/keep"><button class="secondary" type="submit">Keep counting it</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/dismiss"><button class="danger" type="submit">Never charged / refunded — release it</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/duplicate"><button class="danger" type="submit">Duplicate</button></form>
+    {% elif it.kind == "unmapped_card" %}
+      <a class="btn" href="/accounts#wallet">Map this Wallet card</a>
+      <form class="inline" method="post" action="/review/{{ it.id }}/keep"><button class="secondary" type="submit">OK, leave unmapped</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/duplicate"><button class="danger" type="submit">Duplicate</button></form>
+    {% elif it.kind == "amount_problem" %}
+      <form class="inline" method="post" action="/review/{{ it.id }}/keep"><button class="secondary" type="submit">OK</button></form>
+      <form class="inline" method="post" action="/review/{{ it.id }}/duplicate"><button class="danger" type="submit">Duplicate</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

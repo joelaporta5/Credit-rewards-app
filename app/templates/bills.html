@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Committed bills</h1>
+<section class="card">
+  <h2>Due in the next {{ window }} days (subtracted from safe-to-spend)</h2>
+  <table>{% for o in due %}<tr><td>{{ o.bill.name }}</td><td>{{ o.due | day }}</td><td class="num">{{ o.amount_cents | money }}</td></tr>
+  {% else %}<tr><td class="muted">None.</td></tr>{% endfor %}
+  {% if due %}<tr class="total"><td colspan="2">Total</td><td class="num">{{ due | sum(attribute="amount_cents") | money }}</td></tr>{% endif %}</table>
+  <p class="small muted">A bill stops counting the day after its due date (assumed paid from checking, which the checking balance then reflects).</p>
+</section>
+<section class="card">
+  <h2>All bills</h2>
+  <table>{% for b in bills %}<tr><td>{{ b.name }}<div class="small muted">{{ b.recurrence }} from {{ b.due_date | day("%b %d, %Y") }}</div></td>
+    <td class="num">{{ b.amount_cents | money }}</td>
+    <td class="num"><form class="inline" method="post" action="/bills/{{ b.id }}/delete"><button class="danger" type="submit">Remove</button></form></td></tr>
+  {% else %}<tr><td class="muted">No bills yet.</td></tr>{% endfor %}</table>
+  <h3>Add a bill</h3>
+  <form method="post" action="/bills" class="row">
+    <input name="name" placeholder="Name (e.g. Rent)" required>
+    <input name="amount" inputmode="decimal" placeholder="Amount" required style="width:8em">
+    <input name="due_date" type="date" required>
+    <select name="recurrence">{% for r in recurrences %}<option value="{{ r }}">{{ "one time" if r == "none" else r }}</option>{% endfor %}</select>
+    <button type="submit">Add</button>
+  </form>
+</section>
+{% endblock %}

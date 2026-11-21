@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><title>Log in · {{ app_name }}</title><link rel="stylesheet" href="/static/app.css"></head>
+<body><main style="max-width:420px">
+  <div class="card">
+    <h1>{{ app_name }}</h1>
+    <p class="muted">Paste your admin key (ADMIN_API_KEY) to unlock this browser for 30 days.</p>
+    {% if error %}<div class="banner bad">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <label for="k">Admin key</label>
+      <input id="k" name="api_key" type="password" autocomplete="current-password" required style="width:100%">
+      <p><button type="submit">Log in</button></p>
+    </form>
+  </div>
+</main></body></html>

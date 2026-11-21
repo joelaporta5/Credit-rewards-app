@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+{% for w in d.warnings %}<div class="banner warn">{{ w }}</div>{% endfor %}
+{% for i in d.reauth_items %}
+  <div class="banner bad">
+    <strong>{{ i.institution_name or "A connection" }} needs attention</strong> ({{ i.status | replace("_", " ") }}{% if i.error_code %}: {{ i.error_code }}{% endif %}).
+    {% if i.error_message %}{{ i.error_message }}{% endif %}
+    <a href="/connect#item-{{ i.id }}">Reconnect</a>
+  </div>
+{% endfor %}
+
+<section class="card hero">
+  <div class="label">Safe to spend (estimate)</div>
+  {% if d.safe_to_spend is not none %}
+    <div class="big {% if d.safe_to_spend < 0 %}neg{% endif %}">{{ d.safe_to_spend | money }}</div>
+    <div class="muted">Checking balance as of {{ d.verified_cash_age }}
+      {% if d.verified_cash_snapshot %}({{ d.verified_cash_snapshot.as_of | local }}){% endif %}</div>
+  {% else %}
+    <div class="big muted">—</div>
+    <div class="muted">No checking balance yet. <a href="/connect">Connect</a> your bank and mark the account as primary checking on <a href="/accounts">Accounts</a>.</div>
+  {% endif %}
+  <p class="small muted">Not guaranteed. It's only as good as the data below, and pending charges can still change.</p>
+  <form method="post" action="/refresh"><button type="submit">Refresh now</button></form>
+</section>
+
+<section class="card">
+  <h2>How it's calculated</h2>
+  <table>
+    <tr><td>Verified cash <span class="muted small">(checking available balance{% if d.verified_cash_used_current %}, using current balance{% endif %})</span></td>
+        <td class="num">{{ d.verified_cash | money }}</td></tr>
+    <tr><td>− Card spend not yet covered <span class="muted small">(<a href="/ledger">sum of {{ "ledger entries" }}</a>{% if d.reserve_overfunded %}; reserve is over-funded by {{ d.reserve_overfunded | money }}, counted as $0{% endif %})</span></td>
+        <td class="num">{{ d.card_spend_uncovered | money }}</td></tr>
+    <tr><td>− Bills due in the next {{ d.bills_window_days }} days <span class="muted small">(<a href="/bills">{{ d.bills_due | length }} bill{{ "" if d.bills_due|length == 1 else "s" }}</a>)</span></td>
+        <td class="num">{{ d.bills_total | money }}</td></tr>
+    <tr><td>− Minimum buffer</td><td class="num">{{ d.minimum_buffer | money }}</td></tr>
+    <tr><td>− Uncertainty holdback
+        {% if d.holdback_reasons %}<div class="small muted">{% for r in d.holdback_reasons %}• {{ r }}<br>{% endfor %}</div>{% else %}<span class="muted small">(data is fresh)</span>{% endif %}</td>
+        <td class="num">{{ d.holdback | money }}</td></tr>
+    <tr class="total"><td>= Safe to spend</td><td class="num">{{ d.safe_to_spend | money }}</td></tr>
+  </table>
+  {% if d.possible_double_count %}
+    <p class="small banner warn">Up to {{ d.possible_double_count | money }} may be counted twice while matches wait in the <a href="/review">review queue</a>. That makes the number lower, not higher.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Reserve</h2>
+  <div class="grid2">
+    <div>
+      <div class="muted small">Suggested transfer to reserve</div>
+      <div style="font-size:28px;font-weight:700">{{ d.suggested_transfer | money }}</div>
+      <div class="small muted">= card spend not yet covered{% if d.pending_transfer_total %} minus {{ d.pending_transfer_total | money }} you already marked{% endif %}. Make the transfer yourself in your bank's app — this app never moves money.</div>
+    </div>
+    <div>
+      <form method="post" action="/transfers">
+        <label for="amt">I moved this much to the reserve</label>
+        <div class="row"><input id="amt" name="amount" inputmode="decimal" value="{{ d.suggested_transfer | plain }}" style="width:9em">
+        <button type="submit">I moved it</button></div>
+      </form>
+      <div class="small muted" style="margin-top:8px">Reserve balance: {{ d.reserve_cash | money }}
+        {% if d.reserve_snapshot %}as of {{ d.reserve_snapshot.as_of | age }}{% else %}(mark an account as reserve on <a href="/accounts">Accounts</a>){% endif %}
+        {% if d.in_flight_to_reserve %}<br>In flight between banks: {{ d.in_flight_to_reserve | money }}{% endif %}</div>
+    </div>
+  </div>
+  {% if d.pending_transfers %}
+  <h3>Transfers in progress</h3>
+  <table>
+    {% for t in d.pending_transfers %}
+    <tr><td>{{ t.amount_cents | money }} <span class="muted small">marked {{ t.created_at | age }}</span><br>
+      {% if t.status == "pending" %}<span class="pill warn">waiting for Plaid to show it leaving checking</span>
+      {% else %}<span class="pill good">left checking</span> <span class="small muted">waiting for it to post on both accounts</span>{% endif %}</td>
+      <td class="num">
+        <form class="inline" method="post" action="/transfers/{{ t.id }}/confirm"><button class="secondary" type="submit" title="Use only if Plaid never shows it">Confirm manually</button></form>
+        <form class="inline" method="post" action="/transfers/{{ t.id }}/cancel"><button class="danger" type="submit">Cancel</button></form>
+      </td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Review queue</h2>
+  {% if d.review_count %}<p><a class="btn" href="/review">{{ d.review_count }} item{{ "" if d.review_count == 1 else "s" }} to review</a></p>
+  {% else %}<p class="muted">Nothing to review.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Cards</h2>
+  {% if not d.cards %}<p class="muted">No credit cards connected yet.</p>{% endif %}
+  {% for c in d.cards %}
+  <h3>{{ c.card.display_name }}</h3>
+  <div class="scroll"><table>
+    <tr><th></th><th class="num">Provisional</th><th class="num">Posted</th></tr>
+    <tr><td>Today</td><td class="num">{{ c.today_provisional | money }}</td><td class="num">{{ c.today_posted | money }}</td></tr>
+    <tr><td>This cycle <span class="small muted">since {{ c.cycle_start | day }}{% if c.cycle_start_is_estimate %} (est.){% endif %}</span></td>
+        <td class="num">{{ c.cycle_provisional | money }}</td><td class="num">{{ c.cycle_posted | money }}</td></tr>
+  </table></div>
+  <table class="small">
+    <tr><td>Statement balance</td><td class="num">{{ c.statement_balance | money }}{% if c.last_statement_date %} <span class="muted">({{ c.last_statement_date | day }})</span>{% endif %}</td></tr>
+    {% if c.statement_remaining is not none and c.statement_remaining != c.statement_balance %}<tr><td>Still owed on statement (after last payment)</td><td class="num">{{ c.statement_remaining | money }}</td></tr>{% endif %}
+    <tr><td>Payment due</td><td class="num">{{ c.due_date | day }}{% if c.minimum_payment is not none %} <span class="muted">(min {{ c.minimum_payment | money }})</span>{% endif %}</td></tr>
+    <tr><td>Next statement closes</td><td class="num">{{ c.next_close | day }}
+      {% if c.next_close_source == "estimate" %}<span class="pill warn">estimate</span>{% elif c.next_close_source == "manual" %}<span class="pill">entered by you</span>{% else %}<span class="muted">(enter it on <a href="/accounts">Accounts</a>)</span>{% endif %}</td></tr>
+    <tr><td>Reserve covers this statement?</td><td class="num">
+      {% if c.reserve_covers is none %}<span class="muted">unknown</span>
+      {% elif c.reserve_covers %}<span class="pill good">yes</span>
+      {% else %}<span class="pill bad">short {{ c.reserve_shortfall | money }}</span>{% endif %}</td></tr>
+    {% if c.liabilities_as_of %}<tr><td colspan="2" class="muted">Statement data from Plaid, fetched {{ c.liabilities_as_of | age }}</td></tr>{% endif %}
+  </table>
+  {% endfor %}
+  {% if d.unmapped_cycle %}
+  <h3>Unmapped Wallet card</h3>
+  <p class="small">{{ d.unmapped_cycle | money }} of Apple Pay taps on cards not yet mapped ({{ d.unmapped_today | money }} today). Counted against safe-to-spend. <a href="/accounts#wallet">Map them</a>.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Data freshness</h2>
+  <table class="small">
+    <tr><th>Connection</th><th>Status</th><th>Last synced</th><th class="hide-sm">Plaid last reached the bank</th></tr>
+    {% for i in d.items %}
+    <tr><td>{{ i.institution_name or "Connection" }} {% if i.plaid_env == "sandbox" %}<span class="pill">sandbox</span>{% endif %}</td>
+      <td>{% if i.status == "active" %}<span class="pill good">ok</span>{% else %}<span class="pill bad">{{ i.status | replace("_"," ") }}</span>{% endif %}
+          {% if i.last_sync_error %}<div class="muted">{{ i.last_sync_error }}</div>{% endif %}</td>
+      <td>{{ i.last_sync_completed_at | age }}</td><td class="hide-sm">{{ i.institution_last_successful_update | age }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No connections yet. <a href="/connect">Connect an account</a>.</td></tr>{% endfor %}
+  </table>
+  <p class="small muted">Tracking card spend since {{ d.tracking_start | day("%b %d, %Y") }}. Updated {{ d.generated_at | local }}.</p>
+</section>
+{% endblock %}

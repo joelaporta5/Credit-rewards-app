@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Activity &amp; audit</h1>
+<section class="card scroll"><h2>Apple Pay events ({{ counts.events }})</h2>
+  <table class="small"><tr><th>#</th><th>Tapped</th><th>Merchant</th><th>Card</th><th class="num">Amount</th><th>Status</th></tr>
+  {% for e in events %}<tr><td>{{ e.id }}</td><td>{{ e.event_at | local }}{% if e.event_at_source == "received" %}*{% endif %}</td><td>{{ e.merchant_raw or "—" }}</td>
+    <td>{{ e.card_name_raw or "—" }}</td><td class="num">{{ e.amount_cents | money }}</td>
+    <td>{{ e.status }}{% if e.duplicate_of_id %} of #{{ e.duplicate_of_id }}{% endif %}{% if e.parse_warnings %}<div class="muted">{{ e.parse_warnings | join("; ") }}</div>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">None yet.</td></tr>{% endfor %}</table>
+  <p class="small muted">* time received (the Shortcut didn't send a usable timestamp)</p></section>
+<section class="card scroll"><h2>Matching decisions</h2>
+  <table class="small"><tr><th>When</th><th>Decision</th><th>Event</th><th>Txn</th><th>Reason</th></tr>
+  {% for d in decisions %}<tr><td>{{ d.at | local }}</td><td>{{ d.decision | replace("_"," ") }}{% if d.actor == "user" %} (you){% endif %}</td>
+    <td>{{ d.wallet_event_id or "" }}</td><td>{{ d.plaid_transaction_id or "" }}</td><td>{{ d.reason }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">None yet.</td></tr>{% endfor %}</table></section>
+<section class="card scroll"><h2>Plaid transactions ({{ counts.txns }})</h2>
+  <table class="small"><tr><th>#</th><th>Date</th><th>Account</th><th>Description</th><th class="num">Amount</th><th>State</th></tr>
+  {% for t in txns %}<tr><td>{{ t.id }}</td><td>{{ t.effective_date | day }}</td><td>{{ t.account.name }}</td><td>{{ t.display_name }}</td>
+    <td class="num">{{ t.amount_cents | money }}</td><td>{{ "removed" if t.is_removed else ("pending" if t.pending else "posted") }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">None yet.</td></tr>{% endfor %}</table></section>
+<section class="card scroll"><h2>Webhooks</h2>
+  <table class="small"><tr><th>When</th><th>Type</th><th>Verified</th></tr>
+  {% for h in hooks %}<tr><td>{{ h.received_at | local }}</td><td>{{ h.webhook_type }} / {{ h.webhook_code }}</td>
+    <td>{% if h.verified %}<span class="pill good">yes</span>{% else %}<span class="pill bad">rejected</span> {{ h.rejected_reason }}{% endif %}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">None yet.</td></tr>{% endfor %}</table></section>
+<section class="card scroll"><h2>Your changes</h2>
+  <table class="small">{% for a in audit %}<tr><td>{{ a.at | local }}</td><td>{{ a.action | replace("_"," ") }}</td><td><code>{{ a.details }}</code></td></tr>
+  {% else %}<tr><td class="muted">None yet.</td></tr>{% endfor %}</table></section>
+{% endblock %}

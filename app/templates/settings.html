@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Settings</h1>
+<form method="post" action="/settings" class="card">
+  <label for="b">Minimum buffer (always kept aside)</label>
+  <input id="b" name="minimum_buffer" inputmode="decimal" value="{{ v.minimum_buffer_cents | int | plain }}">
+  <label for="h">Uncertainty holdback (extra cushion when data is stale or a connection is broken)</label>
+  <input id="h" name="uncertainty_holdback" inputmode="decimal" value="{{ v.uncertainty_holdback_cents | int | plain }}">
+  <label for="s">Checking balance counts as stale after (hours)</label>
+  <input id="s" name="stale_threshold_hours" type="number" min="1" max="168" value="{{ v.stale_threshold_hours }}">
+  <label for="cs">Card data counts as stale after (hours since last successful sync)</label>
+  <input id="cs" name="card_stale_threshold_hours" type="number" min="1" max="336" value="{{ v.card_stale_threshold_hours }}">
+  <label for="w">Subtract bills due within the next (days)</label>
+  <input id="w" name="bills_window_days" type="number" min="0" max="120" value="{{ v.bills_window_days }}">
+  <label for="t">Count card spend starting on</label>
+  <input id="t" name="tracking_start_date" type="date" value="{{ v.tracking_start_date }}">
+  <p class="small muted">Card purchases before this day aren't counted (assume your existing statements are already planned for). You can move it earlier, not later.</p>
+  <p><button type="submit">Save settings</button></p>
+</form>
+{% endblock %}

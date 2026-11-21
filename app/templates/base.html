@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  {% block head %}{% endblock %}
+</head>
+<body {% block bodyattrs %}{% endblock %}>
+<header>
+  <nav>
+    <a class="brand" href="/">{{ app_name }}</a>
+    <a href="/">Dashboard</a>
+    <a href="/review">Review</a>
+    <a href="/accounts">Accounts &amp; cards</a>
+    <a href="/bills">Bills</a>
+    <a href="/connect">Connect</a>
+    <a href="/ledger">Ledger</a>
+    <a href="/activity">Activity</a>
+    <a href="/settings">Settings</a>
+    <form class="inline" method="post" action="/logout"><button class="secondary" type="submit">Log out</button></form>
+  </nav>
+</header>
+<main>
+  {% if msg %}<div class="banner info">{{ msg }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

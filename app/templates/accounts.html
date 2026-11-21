@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Accounts &amp; cards</h1>
+
+<section class="card">
+  <h2>Accounts</h2>
+  <p class="small muted">Mark one bank account as <b>primary checking</b> (your spending money) and one as <b>reserve</b> (the account you pay your cards from).</p>
+  <div class="scroll"><table>
+    <tr><th>Account</th><th class="num">Balance</th><th>Role</th></tr>
+    {% for a in accounts %}{% set b = latest.get(a.id) %}
+    <tr><td>{{ a.label }}<div class="small muted">{{ a.type }}{% if a.subtype %} · {{ a.subtype }}{% endif %}</div></td>
+      <td class="num">{% if b %}{{ (b.available_cents if b.available_cents is not none else b.current_cents) | money }}<div class="small muted">{{ b.as_of | age }}</div>{% else %}—{% endif %}</td>
+      <td><form method="post" action="/accounts/{{ a.id }}/role" class="row">
+        <select name="role">
+          {% for r, label in [("ignored","Not used"),("primary_checking","Primary checking"),("reserve","Card-payment reserve"),("credit_card","Credit card")] %}
+            <option value="{{ r }}" {% if a.role == r %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select><button class="secondary" type="submit">Save</button></form></td></tr>
+    {% else %}<tr><td colspan="3" class="muted">No accounts yet. <a href="/connect">Connect one</a>.</td></tr>{% endfor %}
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>Cards</h2>
+  <p class="small muted">Plaid usually doesn't tell us when your next statement closes. Enter it here; otherwise it's estimated from the last statement date and labeled “estimate”.</p>
+  {% for c in cards %}
+  <form method="post" action="/cards/{{ c.id }}" class="row" style="margin-bottom:10px">
+    <b style="min-width:12em">{{ c.account.label }}</b>
+    <input name="nickname" value="{{ c.nickname or '' }}" placeholder="Nickname (optional)">
+    <label class="small" style="margin:0">Next statement closes</label>
+    <input type="date" name="next_close" value="{{ c.manual_next_statement_close_date or '' }}">
+    <button class="secondary" type="submit">Save</button>
+  </form>
+  {% else %}<p class="muted">No cards yet.</p>{% endfor %}
+</section>
+
+<section class="card" id="wallet">
+  <h2>Wallet card mapping</h2>
+  <p class="small muted">Each Apple Pay event arrives with the card name Wallet shows (e.g. “Amex Gold”). Tell the app which Plaid card that is. New names appear here automatically the first time you tap.</p>
+  <table>
+    {% for al in aliases %}
+    <tr><td>“{{ al.display_name }}”</td><td>
+      <form method="post" action="/wallet-cards/{{ al.id }}" class="row">
+        <select name="card_id"><option value="">— not mapped —</option>
+          {% for c in cards %}<option value="{{ c.id }}" {% if al.card_id == c.id %}selected{% endif %}>{{ c.display_name }}</option>{% endfor %}
+        </select><button class="secondary" type="submit">Save</button></form></td></tr>
+    {% else %}<tr><td class="muted">No Wallet cards seen yet.</td></tr>{% endfor %}
+  </table>
+  <h3>Add a Wallet card name in advance</h3>
+  <form method="post" action="/wallet-cards" class="row">
+    <input name="name" placeholder="Name exactly as in Wallet" required>
+    <select name="card_id"><option value="">— choose card —</option>{% for c in cards %}<option value="{{ c.id }}">{{ c.display_name }}</option>{% endfor %}</select>
+    <button type="submit">Add</button>
+  </form>
+</section>
+{% endblock %}

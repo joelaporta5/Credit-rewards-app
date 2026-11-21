@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block bodyattrs %}data-oauth-return="1"{% endblock %}
+{% block content %}
+<div class="card"><h1>Finishing your bank connection…</h1><p id="link-status" class="muted">Reopening Plaid.</p></div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="/static/link.js"></script>
+{% endblock %}
