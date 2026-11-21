@@ -352,7 +352,7 @@ def ledger_adjust(amount: str = Form(...), direction: str = Form(...), reason: s
 
 
 @router.get("/activity")
-def activity_page(request: Request, db: Session = Depends(get_db)):
+def activity_page(request: Request, msg: str | None = None, db: Session = Depends(get_db)):
     events = db.scalars(select(WalletEvent).order_by(desc(WalletEvent.id)).limit(50)).all()
     txns = db.scalars(select(PlaidTransaction).order_by(desc(PlaidTransaction.updated_at)).limit(50)).all()
     decisions = db.scalars(select(MatchDecision).order_by(desc(MatchDecision.id)).limit(100)).all()
@@ -361,4 +361,4 @@ def activity_page(request: Request, db: Session = Depends(get_db)):
     counts = {"events": db.scalar(select(func.count()).select_from(WalletEvent)),
               "txns": db.scalar(select(func.count()).select_from(PlaidTransaction))}
     return templates.TemplateResponse(request, "activity.html", {"events": events, "txns": txns, "decisions": decisions,
-                                                                 "hooks": hooks, "audit": audit, "counts": counts})
+                                                                 "hooks": hooks, "audit": audit, "counts": counts, "msg": msg})

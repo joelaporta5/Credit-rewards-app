@@ -128,3 +128,22 @@ def update_webhooks():
     from urllib.parse import quote
 
     return RedirectResponse(f"/connect?msg={quote(' | '.join(out) or 'No connections')}", status_code=303)
+
+
+@router.post("/admin/sandbox/test-webhook")
+def sandbox_test_webhook(db: Session = Depends(get_db)):
+    """Sandbox only: ask Plaid to send a real, signed SYNC_UPDATES_AVAILABLE webhook to this server.
+    Check the Activity page a few seconds later: it should show as verified."""
+    from urllib.parse import quote
+
+    if get_settings().plaid_env != "sandbox":
+        raise HTTPException(400, "Only available in Sandbox")
+    out = []
+    gw = get_gateway()
+    for item in db.scalars(select(PlaidItem).where(PlaidItem.plaid_env == "sandbox", PlaidItem.status != "removed")):
+        try:
+            gw.sandbox_fire_webhook(decrypt_token(item.access_token_encrypted), "SYNC_UPDATES_AVAILABLE", "TRANSACTIONS")
+            out.append(f"{item.institution_name}: webhook requested")
+        except PlaidError as e:
+            out.append(f"{item.institution_name}: {e.error_code}")
+    return RedirectResponse(f"/activity?msg={quote(' | '.join(out) or 'No Sandbox connections')}", status_code=303)

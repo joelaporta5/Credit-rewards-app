@@ -27,6 +27,10 @@
   <p class="small muted">Reconnecting uses Plaid's “update mode” on the same connection: it does not create a new one or use another Trial slot.</p>
   <form method="post" action="/admin/update-webhooks"><button class="secondary" type="submit">Point all connections' webhooks at this server</button></form>
   <p class="small muted">Use this once after moving the app to a new address (e.g. from a tunnel to Render).</p>
+  {% if plaid_env == "sandbox" %}
+  <form method="post" action="/admin/sandbox/test-webhook"><button class="secondary" type="submit">Send a test webhook (Sandbox)</button></form>
+  <p class="small muted">Plaid sends a real signed webhook here; the Activity page should list it as verified within a few seconds.</p>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
