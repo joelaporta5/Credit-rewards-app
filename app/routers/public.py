@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -14,7 +14,15 @@ from app import jobs
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import WebhookLog
-from app.security import COOKIE, SESSION_MAX_AGE, check_admin_key, login_throttle, make_session_cookie, require_wallet_key
+from app.security import (
+    COOKIE,
+    SESSION_MAX_AGE,
+    check_admin_key,
+    has_valid_wallet_header,
+    login_throttle,
+    make_session_cookie,
+    wallet_key_matches,
+)
 from app.services import wallet, webhooks
 from app.services.plaid_gateway import get_gateway
 from app.templating import templates
@@ -76,13 +84,27 @@ async def _read_payload(request: Request):
     return {"_unstructured": text[:2000]}, None
 
 
-@router.post("/events/wallet", dependencies=[Depends(require_wallet_key)], status_code=202)
+BODY_KEY_FIELDS = ("key", "api_key", "apikey", "wallet_key")
+
+
+@router.post("/events/wallet", status_code=202)
 async def wallet_event(request: Request, background: BackgroundTasks):
     """Called by the iPhone Shortcut on every Apple Pay tap. Stores the event and answers
-    immediately; matching runs in the background."""
+    immediately; matching runs in the background.
+
+    The wallet key may be sent as a header (X-API-Key / Authorization: Bearer) or, to keep the
+    Shortcut simple, as a "key" field in the JSON body. A body key is removed before anything is
+    stored or logged."""
     payload, err = await _read_payload(request)
     if err:
         return JSONResponse({"ok": False, "error": err}, status_code=413)
+    body_key = ""
+    if isinstance(payload, dict):
+        for k in list(payload.keys()):
+            if str(k).strip().lower() in BODY_KEY_FIELDS:
+                body_key = str(payload.pop(k) or "")
+    if not (has_valid_wallet_header(request) or wallet_key_matches(body_key)):
+        return JSONResponse({"ok": False, "error": "Invalid or missing API key"}, status_code=401)
 
     def store():
         with SessionLocal() as s:

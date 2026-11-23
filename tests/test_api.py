@@ -93,15 +93,22 @@ def test_wallet_endpoint_accepts_messy_input_and_dedupes(client, world):
     r2 = client.post("/events/wallet", headers={"Authorization": "Bearer " + WALLET["X-API-Key"]},
                      json={"amount": "12.34", "merchant": "Blue Bottle", "card": "Amex Gold"})
     assert r2.json()["status"] == "duplicate"
+    # Key in the JSON body (simplest Shortcut setup): accepted, and the key is never stored.
+    r4 = client.post("/events/wallet", json={"key": WALLET["X-API-Key"], "amount": "3.50", "merchant": "Bakery", "card": "Amex Gold"})
+    assert r4.status_code == 202 and r4.json()["status"] == "accepted"
+    assert client.post("/events/wallet", json={"key": "wrong", "amount": "1"}).status_code == 401
+    assert client.post("/events/wallet", json={"key": ADMIN["X-API-Key"], "amount": "1"}).status_code == 401
+    stored = world.s.get(WalletEvent, r4.json()["event_id"])
+    assert "key" not in stored.raw_payload and WALLET["X-API-Key"] not in str(stored.raw_payload)
     # Missing everything still accepted (recorded, sent to review), never a 500.
     r3 = client.post("/events/wallet", headers=WALLET, content=b"not json at all")
     assert r3.status_code == 202
     s = world.s
     s.expire_all()
-    assert s.scalar(select(func.count()).select_from(WalletEvent)) == 3
+    assert s.scalar(select(func.count()).select_from(WalletEvent)) == 4
     assert s.scalar(select(func.count()).select_from(ReviewItem).where(ReviewItem.kind == "amount_problem")) == 1
     d = client.get("/api/dashboard", headers=ADMIN).json()
-    assert d["card_spend_not_yet_covered_cents"] == 1234
+    assert d["card_spend_not_yet_covered_cents"] == 1234 + 350
     assert d["guaranteed"] is False
 
 

@@ -183,75 +183,92 @@ Steps:
 
 ## 5. Build the iPhone Shortcut (iOS 27)
 
-The Shortcut sends each Apple Pay tap to `POST /events/wallet` the moment you pay.
+Every time you pay with Apple Pay, your iPhone sends the amount, the store and the card name
+to your app. You build this once in the **Shortcuts** app (it's preinstalled; search for it if
+you don't see it).
 
-You need your app address (e.g. `https://rewards-autopilot.onrender.com`) and your
-**`WALLET_API_KEY`** (not the admin key: the wallet key can only submit purchases).
+**Have these ready** (copy them into Notes on your iPhone first, so you can paste them):
+- your **app address**, e.g. `https://rewards-autopilot-xxxx.onrender.com`. Add `/events/wallet` to
+  the end: `https://rewards-autopilot-xxxx.onrender.com/events/wallet`
+- your **WALLET_API_KEY** (Render → rewards-autopilot → Environment). Not the admin key.
 
-### Option A — describe it (iOS 27)
+Apple occasionally renames buttons. If a label below doesn't match exactly, look for the closest one.
 
-Shortcuts app → **Automation** → **+** → choose the **Wallet** trigger (called
-"Transaction" on older iOS), select all your cards, choose **Run Immediately**, then create a
-new shortcut for it using **Describe a Shortcut** with something like:
+### Part 1 — the trigger ("when I pay")
 
-> Take the transaction from the shortcut input. Send a POST request with Get Contents of URL to
-> https://YOUR-APP.onrender.com/events/wallet. Use a JSON request body with these keys:
-> "amount" set to the transaction's Amount, "merchant" set to the transaction's Merchant,
-> "card" set to the transaction's card or pass name, and "timestamp" set to the current date
-> formatted as ISO 8601 including the time. Add a header named Content-Type with value
-> application/json. Don't show any notification or ask for confirmation.
+1. Open **Shortcuts** → tap **Automation** at the bottom.
+2. Tap **+** (top right). You'll see a list of triggers.
+3. Scroll down and tap **Wallet** (on older iOS it's called **Transaction**).
+4. Under cards, tap **Choose** and select **every card** you pay with. Leave the other options as they are.
+5. At the bottom, choose **Run Immediately** (so it doesn't ask you each time). Turn **Notify When Run** off if you like.
+6. Tap **Next**, then **Create New Shortcut** (or **New Blank Automation**).
 
-**Don't put the wallet key in the description.** Natural-language creation may be processed
-by Apple's cloud models. After it builds the shortcut, open the **Get Contents of URL**
-action and add the key header by hand (step 4 below). Then check the result against Option B;
-generated shortcuts sometimes need small fixes.
+### Part 2 — the action ("send it to my app")
 
-### Option B — build it by hand
+7. In the search bar at the bottom ("Search for apps and actions"), type **Get Contents of URL**
+   and tap it. A block appears saying *Get contents of URL*.
+8. Tap the blue word **URL** in that block and **paste your address** ending in `/events/wallet`.
+9. Tap the small **arrow (›)** on the right edge of the block to open its options.
+10. **Method**: tap **GET** and change it to **POST**.
+11. **Request Body**: make sure it says **JSON**. Ignore **Headers**; you don't need them.
+12. Tap **Add new field** → **Text**, four times. For each one, type the **Key**, then fill the **Value**:
 
-1. Shortcuts → **Automation** → **+** → **Wallet** (or **Transaction**) → select every card
-   you use → **Run Immediately** (turn **off** "Notify When Run" if you like) → **Next** →
-   **New Blank Automation**.
-2. Add **Format Date**: Date = *Current Date*, Date Format = **ISO 8601**, Include Time = on.
-3. Add **Get Contents of URL**:
-   - URL: `https://YOUR-APP.onrender.com/events/wallet`
-   - Tap **▸** to expand. **Method: POST**.
-4. **Headers** (tap *Add new header* twice):
-   - `X-API-Key` → *your WALLET_API_KEY*
-   - `Content-Type` → `application/json`
-5. **Request Body: JSON**, add four **Text** fields:
+| Key (type exactly) | Value |
+|---|---|
+| `key` | paste your **WALLET_API_KEY** |
+| `amount` | tap the Value box → in the bar above the keyboard tap **Shortcut Input** → tap the blue **Shortcut Input** bubble you just added → choose **Amount** |
+| `merchant` | same way, but choose **Merchant** |
+| `card` | same way, but choose the card's **Name** (it may be called **Card or Pass** or **Name**) |
 
-   | Key | Value (tap the field, then pick the magic variable) |
-   |---|---|
-   | `amount` | Shortcut Input → **Amount** |
-   | `merchant` | Shortcut Input → **Merchant** |
-   | `card` | Shortcut Input → the card name (**Card or Pass** / **Name**, whichever your iOS shows) |
-   | `timestamp` | **Formatted Date** (from step 2) |
+    If you don't see "Shortcut Input" above the keyboard, tap **Select Variable** and pick
+    **Shortcut Input**, then tap it to choose the detail (Amount, Merchant, Name).
 
-   You can also add `id` (Text, e.g. a UUID from *Generate UUID*); a repeat with the same id
-   is always counted once.
-6. Done. Make a small Apple Pay purchase and check the dashboard (or **Activity**): the tap
-   should show within seconds. On **Accounts & cards → Wallet card mapping**, map the card
-   name you see to the right Plaid card (once per card).
+13. Tap **Done** (top right).
 
-**What the server accepts:** any of those fields may be missing or oddly formatted. Amounts
-like `$12.34`, `12,34` or `1.234,56` are understood; a missing time falls back to when the
-server received it; repeats within 2 minutes are counted once. The server answers within
-milliseconds (`202 Accepted`) and does the matching afterwards.
+### Part 3 — try it
 
-**Known iPhone quirks:** some people report the Wallet trigger asking "Allow / Always Allow"
-again, firing late, or timing out, and reportedly it can fire for **declined** cards too.
-Late or missing taps are fine; Plaid fills the gap. A declined tap never matches a Plaid charge,
-so after 5 days it appears in the review queue as "possibly missing", where you release it.
+14. Pay for something small with Apple Pay.
+15. In your app, open **Activity**. Under **Apple Pay events** you should see the purchase within
+    a few seconds. If it says "timestamp missing; used time received", that's fine.
+16. Open **Accounts & cards** → **Wallet card mapping**. The card name your phone sent is listed.
+    Pick which card it is and tap **Save**. Do this once per card.
 
-Test without a purchase (PowerShell):
+**If nothing shows up in Activity:** open Shortcuts → Automation, tap your automation and check the
+address (it must end in `/events/wallet`), that the Method is **POST**, and that `key` holds the
+**wallet** key. Also check that the Shortcuts app is allowed to use mobile data (Settings → Cellular).
+
+### Optional — describe it instead (iOS 27)
+
+iOS 27 can build the action from a description: in the new automation, choose **Describe a Shortcut**
+and paste:
+
+> Send a POST request with Get Contents of URL to https://YOUR-APP.onrender.com/events/wallet with a JSON
+> body containing "amount" set to the shortcut input's Amount, "merchant" set to its Merchant and "card"
+> set to its card name.
+
+Leave the key out of the description (descriptions may be processed by Apple's cloud). Afterwards
+add the `key` field by hand (step 12) and compare the result with Part 2.
+
+### Good to know
+
+- Any field may be missing or oddly formatted (`$12.34`, `12,34`…); the app copes. If the same
+  purchase arrives twice within 2 minutes, it's counted once.
+- Optional extras: a `timestamp` field (**Format Date** action → ISO 8601, include time → use
+  **Formatted Date**), and an `id` field (**Generate UUID**) so a repeat is always recognized.
+- Known iPhone quirks: the automation sometimes runs late, asks "Allow" again, or times out, and it
+  reportedly also fires for **declined** cards. Missing taps are harmless (Plaid catches the charge).
+  A declined tap shows up in **Review** after 5 days; tap **Never charged / refunded** to release it.
+- The key can also be sent as an `X-API-Key` header instead of the `key` field.
+
+Test from a Windows PC without buying anything (PowerShell):
 
 ```powershell
-$h = @{ "X-API-Key" = "YOUR_WALLET_API_KEY" }
-Invoke-RestMethod -Method Post -Uri "https://YOUR-APP.onrender.com/events/wallet" -Headers $h `
-  -ContentType "application/json" -Body '{"amount":"$1.23","merchant":"Test Shop","card":"Test Card"}'
+Invoke-RestMethod -Method Post -Uri "https://YOUR-APP.onrender.com/events/wallet" `
+  -ContentType "application/json" `
+  -Body '{"key":"YOUR_WALLET_API_KEY","amount":"$1.23","merchant":"Test Shop","card":"Test Card"}'
 ```
 
-(That test event will sit in your review queue; mark it as a duplicate to remove it.)
+(That test shows up in your review queue; tap **Duplicate** to remove it.)
 
 ---
 

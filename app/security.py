@@ -2,7 +2,8 @@
 
 - Dashboard/admin: header `X-API-Key: <ADMIN_API_KEY>`, or log in once in the browser with
   that key; the browser then holds a signed, HttpOnly session cookie.
-- iPhone Shortcut: header `X-API-Key: <WALLET_API_KEY>` (or `Authorization: Bearer ...`).
+- iPhone Shortcut: header `X-API-Key: <WALLET_API_KEY>` (or `Authorization: Bearer ...`),
+  or a `"key"` field in the JSON body (removed before the event is stored).
   That key can only submit wallet events, so a leaked phone key can't read anything.
 - Plaid webhooks: verified by signature (see services/webhooks.py), no key.
 
@@ -89,9 +90,12 @@ def require_admin(request: Request) -> str:
     raise HTTPException(status_code=401, detail="Authentication required")
 
 
-def require_wallet_key(request: Request) -> None:
-    if not _eq(_header_key(request), get_settings().wallet_api_key):
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+def wallet_key_matches(candidate: str) -> bool:
+    return _eq(candidate.strip(), get_settings().wallet_api_key)
+
+
+def has_valid_wallet_header(request: Request) -> bool:
+    return wallet_key_matches(_header_key(request))
 
 
 class LoginThrottle:
